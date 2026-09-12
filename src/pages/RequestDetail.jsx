@@ -1,0 +1,338 @@
+import { useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
+import { MapView } from "../components/MapView";
+import { StatusBadge } from "../components/StatusBadge";
+import { useAuth } from "../context/AuthContext";
+import {
+  cancelRequest,
+  finishRequest,
+  getMessages,
+  getRequest,
+  getReport,
+  rateRequest,
+} from "../services/requestService";
+import { connectSocket } from "../services/socket";
+
+function formatDistancia(metros) {
+  if (metros === null || metros === undefined) return "calculando...";
+  if (metros < 1000) return `${Math.round(metros)} m`;
+  return `${(metros / 1000).toFixed(1)} km`;
+}
+
+export function RequestDetail() {
+  const { id } = useParams();
+  const { user } = useAuth();
+  const [request, setRequest] = useState(null);
+  const [doctorLocation, setDoctorLocation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState(null);
+  const [report, setReport] = useState(null);
+  const [reportForm, setReportForm] = useState({
+    diagnostico: "",
+    procedimientoRealizado: "",
+    observaciones: "",
+    recomendaciones: "",
+  });
+  const [rating, setRating] = useState({ puntaje: 5, comentario: "" });
+  const [distanciaMetros, setDistanciaMetros] = useState(null);
+  const watchIdRef = useRef(null);
+
+  useEffect(() => {
+    getRequest(id)
+      .then(setRequest)
+      .catch(() => setError("No se pudo cargar la solicitud."));
+    getMessages(id)
+      .then(setMessages)
+      .catch(() => {});
+  }, [id]);
+
+  useEffect(() => {
+    if (request?.estado !== "finalizada") return;
+    getReport(id)
+      .then(setReport)
+      .catch(() => {});
+  }, [id, request?.estado]);
+
+  useEffect(() => {
+    const socket = connectSocket();
+    socket.emit("solicitud:unirse", id, (ack) => {
+      if (ack?.error) setError(ack.error);
+    });
+
+    socket.on("ubicacion:medico", (payload) => {
+      if (String(payload.solicitudId) === String(id)) {
+        setDoctorLocation({ lat: payload.lat, lng: payload.lng });
+        setDistanciaMetros(payload.distanciaMetros);
+      }
+    });
+    socket.on("mensaje:nuevo", (msg) => {
+      if (String(msg.solicitud_id) === String(id)) {
+        setMessages((prev) => [...prev, msg]);
+      }
+    });
+    socket.on("solicitud:actualizada", (updated) => {
+      if (String(updated.id) === String(id)) {
+        setRequest(updated);
+      }
+    });
+
+    return () => {
+      socket.emit("solicitud:salir", id);
+      socket.off("ubicacion:medico");
+      socket.off("mensaje:nuevo");
+      socket.off("solicitud:actualizada");
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (user?.rol !== "medico" || !navigator.geolocation) return;
+    if (!["aceptada", "en_camino", "en_atencion"].includes(request?.estado)) return;
+
+    watchIdRef.current = navigator.geolocation.watchPosition((pos) => {
+      const socket = connectSocket();
+      socket.emit("ubicacion:enviar", {
+        solicitudId: id,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      });
+    });
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, [id, user, request?.estado]);
+
+  function sendMessage(e) {
+    e.preventDefault();
+    if (!draft.trim()) return;
+    const socket = connectSocket();
+    socket.emit("mensaje:enviar", { solicitudId: id, contenido: draft }, (ack) => {
+      if (ack?.error) setError(ack.error);
+    });
+    setDraft("");
+  }
+
+  async function handleCancel() {
+    try {
+      const updated = await cancelRequest(id);
+      setRequest(updated);
+    } catch (err) {
+      setError(err.response?.data?.error ?? "No se pudo cancelar la solicitud.");
+    }
+  }
+
+  async function handleFinish(e) {
+    e.preventDefault();
+    try {
+      const updated = await finishRequest(id, reportForm);
+      setRequest(updated);
+    } catch (err) {
+      setError(err.response?.data?.error ?? "No se pudo finalizar la solicitud.");
+    }
+  }
+
+  async function handleRate(e) {
+    e.preventDefault();
+    try {
+      await rateRequest(id, rating);
+      const updated = await getRequest(id);
+      setRequest(updated);
+    } catch (err) {
+      setError(err.response?.data?.error ?? "No se pudo enviar la calificación.");
+    }
+  }
+
+  if (error && !request) return <p className="form-error">{error}</p>;
+  if (!request) return <p>Cargando...</p>;
+
+  const pacienteUbicacion = { lat: request.lat, lng: request.lng };
+  const markers = [
+    { ...pacienteUbicacion, label: request.paciente_nombre ?? "Paciente", color: "blue" },
+  ];
+  if (doctorLocation) {
+    markers.push({
+      ...doctorLocation,
+      label: request.medico_nombre ?? "Médico",
+      color: "orange",
+    });
+  }
+  const route = doctorLocation ? [doctorLocation, pacienteUbicacion] : null;
+  const contraparte =
+    user?.rol === "medico"
+      ? { etiqueta: "Paciente", nombre: request.paciente_nombre }
+      : { etiqueta: "Médico", nombre: request.medico_nombre };
+
+  return (
+    <div className="dashboard">
+      <section className="panel">
+        <div className="request-header">
+          <h2>{request.tipo_procedimiento}</h2>
+          <StatusBadge estado={request.estado} />
+        </div>
+        <p>{request.descripcion}</p>
+        {contraparte.nombre && (
+          <p className="form-hint">
+            {contraparte.etiqueta}: {contraparte.nombre}
+          </p>
+        )}
+        {error && <p className="form-error">{error}</p>}
+        {doctorLocation && (
+          <p className="form-hint">
+            Distancia hasta el paciente: {formatDistancia(distanciaMetros)}
+          </p>
+        )}
+
+        <MapView
+          center={doctorLocation ?? pacienteUbicacion}
+          markers={markers}
+          route={route}
+          height={360}
+        />
+
+        <div className="request-actions">
+          {user?.rol === "paciente" &&
+            ["pendiente", "aceptada"].includes(request.estado) && (
+              <button className="btn btn-danger" onClick={handleCancel}>
+                Cancelar solicitud
+              </button>
+            )}
+        </div>
+
+        {user?.rol === "medico" &&
+          ["aceptada", "en_camino", "en_atencion"].includes(request.estado) && (
+            <form className="request-form" onSubmit={handleFinish}>
+              <h3>Finalizar atención</h3>
+              <label>
+                Diagnóstico
+                <textarea
+                  value={reportForm.diagnostico}
+                  onChange={(e) =>
+                    setReportForm((prev) => ({ ...prev, diagnostico: e.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Procedimiento realizado
+                <textarea
+                  value={reportForm.procedimientoRealizado}
+                  onChange={(e) =>
+                    setReportForm((prev) => ({
+                      ...prev,
+                      procedimientoRealizado: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Observaciones
+                <textarea
+                  value={reportForm.observaciones}
+                  onChange={(e) =>
+                    setReportForm((prev) => ({ ...prev, observaciones: e.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Recomendaciones
+                <textarea
+                  value={reportForm.recomendaciones}
+                  onChange={(e) =>
+                    setReportForm((prev) => ({ ...prev, recomendaciones: e.target.value }))
+                  }
+                />
+              </label>
+              <button type="submit">Marcar como finalizada</button>
+            </form>
+          )}
+
+        {report && (
+          <div className="panel">
+            <h3>Reporte de atención</h3>
+            <p>
+              <strong>Diagnóstico:</strong> {report.diagnostico || "—"}
+            </p>
+            <p>
+              <strong>Procedimiento realizado:</strong>{" "}
+              {report.procedimiento_realizado || "—"}
+            </p>
+            <p>
+              <strong>Observaciones:</strong> {report.observaciones || "—"}
+            </p>
+            <p>
+              <strong>Recomendaciones:</strong> {report.recomendaciones || "—"}
+            </p>
+          </div>
+        )}
+
+        {user?.rol === "paciente" &&
+          request.estado === "finalizada" &&
+          !request.puntaje && (
+            <form className="request-form" onSubmit={handleRate}>
+              <h3>Califica la atención</h3>
+              <label>
+                Puntaje (1 a 5)
+                <select
+                  value={rating.puntaje}
+                  onChange={(e) =>
+                    setRating((prev) => ({ ...prev, puntaje: Number(e.target.value) }))
+                  }
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Comentario
+                <textarea
+                  value={rating.comentario}
+                  onChange={(e) =>
+                    setRating((prev) => ({ ...prev, comentario: e.target.value }))
+                  }
+                />
+              </label>
+              <button type="submit">Enviar calificación</button>
+            </form>
+          )}
+        {request.puntaje && (
+          <p>
+            Ya calificaste esta atención: ★ {request.puntaje}/5
+            {request.calificacion_comentario ? ` — "${request.calificacion_comentario}"` : ""}
+          </p>
+        )}
+      </section>
+
+      <section className="panel">
+        <h2>Chat</h2>
+        <div className="chat-messages">
+          {messages.length === 0 && <p>Aún no hay mensajes.</p>}
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={`chat-bubble ${m.remitente_id === user?.id ? "chat-bubble--own" : ""}`}
+            >
+              {m.contenido}
+            </div>
+          ))}
+        </div>
+        {["aceptada", "en_camino", "en_atencion"].includes(request.estado) ? (
+          <form className="chat-input" onSubmit={sendMessage}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Escribe un mensaje..."
+            />
+            <button type="submit">Enviar</button>
+          </form>
+        ) : (
+          <p className="form-hint">El chat ya no está disponible para esta solicitud.</p>
+        )}
+      </section>
+    </div>
+  );
+}
