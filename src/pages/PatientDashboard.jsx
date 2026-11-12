@@ -1,24 +1,44 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { createRequest, getMyRequests } from "../services/requestService";
 import { StatusBadge } from "../components/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 
 const TIPOS_PROCEDIMIENTO = [
-  "Vía intravenosa / catéter",
-  "Inyección",
-  "Curación de heridas",
-  "Toma de signos vitales",
-  "Otro",
+  { label: "Vía intravenosa / catéter", icon: "💉" },
+  { label: "Inyección", icon: "💊" },
+  { label: "Curación de heridas", icon: "🩹" },
+  { label: "Toma de signos vitales", icon: "❤️" },
+  { label: "Otro", icon: "📋" },
 ];
 
+const ACTIVOS = ["pendiente", "aceptada", "en_camino", "en_atencion"];
+
+function iconoPara(tipo) {
+  return TIPOS_PROCEDIMIENTO.find((t) => t.label === tipo)?.icon ?? "📋";
+}
+
+function tiempoDesde(fechaIso) {
+  const diffMs = Date.now() - new Date(fechaIso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "hace un momento";
+  if (min < 60) return `hace ${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  return `hace ${dias} d`;
+}
+
 export function PatientDashboard() {
+  const { user } = useAuth();
   const [requests, setRequests] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [form, setForm] = useState({
-    tipoProcedimiento: TIPOS_PROCEDIMIENTO[0],
+    tipoProcedimiento: TIPOS_PROCEDIMIENTO[0].label,
     descripcion: "",
   });
   const [location, setLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -34,7 +54,7 @@ export function PatientDashboard() {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         }),
-      () => setError("No se pudo obtener tu ubicación. Actívala para publicar una solicitud.")
+      () => setLocationError("No se pudo obtener tu ubicación. Actívala para publicar una solicitud.")
     );
   }, []);
 
@@ -50,6 +70,15 @@ export function PatientDashboard() {
     }
   }
 
+  const stats = useMemo(
+    () => ({
+      total: requests.length,
+      activas: requests.filter((r) => ACTIVOS.includes(r.estado)).length,
+      finalizadas: requests.filter((r) => r.estado === "finalizada").length,
+    }),
+    [requests]
+  );
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!location) {
@@ -60,7 +89,7 @@ export function PatientDashboard() {
     setSubmitting(true);
     try {
       await createRequest({ ...form, lat: location.lat, lng: location.lng });
-      setForm({ tipo_procedimiento: TIPOS_PROCEDIMIENTO[0], descripcion: "" });
+      setForm({ tipoProcedimiento: TIPOS_PROCEDIMIENTO[0].label, descripcion: "" });
       loadRequests();
     } catch (err) {
       setError(
@@ -71,8 +100,41 @@ export function PatientDashboard() {
     }
   }
 
+  const primerNombre = user?.nombre?.split(" ")[0];
+
   return (
     <div className="dashboard">
+      <div className="dashboard-header">
+        <div>
+          <h1>Hola, {primerNombre} 👋</h1>
+          <p>Publica una solicitud de atención o revisa el estado de las que ya tienes.</p>
+        </div>
+      </div>
+
+      <div className="quick-stats dashboard-quick-stats">
+        <div className="quick-stat-card">
+          <span className="quick-stat-icon">📋</span>
+          <div>
+            <div className="stat-value">{stats.total}</div>
+            <div className="stat-label">Solicitudes totales</div>
+          </div>
+        </div>
+        <div className="quick-stat-card">
+          <span className="quick-stat-icon">🕒</span>
+          <div>
+            <div className="stat-value">{stats.activas}</div>
+            <div className="stat-label">Activas</div>
+          </div>
+        </div>
+        <div className="quick-stat-card">
+          <span className="quick-stat-icon">✅</span>
+          <div>
+            <div className="stat-value">{stats.finalizadas}</div>
+            <div className="stat-label">Finalizadas</div>
+          </div>
+        </div>
+      </div>
+
       <section className="panel">
         <h2>Publicar solicitud de atención</h2>
         {error && <p className="form-error">{error}</p>}
@@ -86,8 +148,8 @@ export function PatientDashboard() {
               }
             >
               {TIPOS_PROCEDIMIENTO.map((tipo) => (
-                <option key={tipo} value={tipo}>
-                  {tipo}
+                <option key={tipo.label} value={tipo.label}>
+                  {tipo.icon} {tipo.label}
                 </option>
               ))}
             </select>
@@ -103,12 +165,22 @@ export function PatientDashboard() {
               required
             />
           </label>
-          <p className="form-hint">
-            {location
-              ? `Ubicación detectada (${location.lat.toFixed(4)}, ${location.lng.toFixed(4)})`
-              : "Obteniendo tu ubicación..."}
-          </p>
-          <button type="submit" disabled={submitting || !location}>
+
+          {location && (
+            <span className="location-indicator">
+              Ubicación detectada ({location.lat.toFixed(4)}, {location.lng.toFixed(4)})
+            </span>
+          )}
+          {!location && !locationError && (
+            <span className="location-indicator location-indicator--pending">
+              Obteniendo tu ubicación...
+            </span>
+          )}
+          {locationError && (
+            <span className="location-indicator location-indicator--error">{locationError}</span>
+          )}
+
+          <button className="btn btn-primary" type="submit" disabled={submitting || !location}>
             {submitting ? "Publicando..." : "Publicar solicitud"}
           </button>
         </form>
@@ -117,19 +189,27 @@ export function PatientDashboard() {
       <section className="panel">
         <h2>Mis solicitudes</h2>
         {loadingList && <p>Cargando...</p>}
+
         {!loadingList && requests.length === 0 && (
-          <p>Aún no tienes solicitudes publicadas.</p>
+          <div className="empty-state">
+            <span className="empty-state-icon">🗒️</span>
+            <p>Aún no tienes solicitudes publicadas.</p>
+          </div>
         )}
-        <ul className="request-list">
+
+        <div className="request-card-list">
           {requests.map((r) => (
-            <li key={r.id}>
-              <Link to={`/solicitud/${r.id}`} className="request-list-item">
-                <span>{r.tipo_procedimiento}</span>
-                <StatusBadge estado={r.estado} />
-              </Link>
-            </li>
+            <Link key={r.id} to={`/solicitud/${r.id}`} className="request-card">
+              <span className="request-card-icon">{iconoPara(r.tipo_procedimiento)}</span>
+              <div className="request-card-body">
+                <strong>{r.tipo_procedimiento}</strong>
+                <div className="request-card-meta">{tiempoDesde(r.creado_en)}</div>
+              </div>
+              <StatusBadge estado={r.estado} />
+              <span className="request-card-chevron">→</span>
+            </Link>
           ))}
-        </ul>
+        </div>
       </section>
     </div>
   );

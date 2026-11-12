@@ -20,11 +20,26 @@ export function Layout() {
 
   return (
     <div className="app-shell">
+      <a href="#contenido" className="skip-link">
+        Saltar al contenido
+      </a>
+      <div className="topbar">
+        <div className="topbar-inner">
+          <span>🕒 Atención todos los días · 7:00 a. m. – 10:00 p. m.</span>
+          <span className="topbar-right">
+            <span>📍 Puente Piedra, Lima</span>
+            <span className="topbar-emergency">🚑 Emergencias: llama al 106 (SAMU)</span>
+          </span>
+        </div>
+      </div>
       <header className="navbar">
         <div className="navbar-brand-group">
           <Link to="/" className="navbar-brand" onClick={closeMenu}>
-            <span className="navbar-logo-badge">✚</span>
-            MedGo
+            <span className="navbar-logo-badge" aria-hidden="true">✚</span>
+            <span className="navbar-brand-text">
+              MedGo
+              <small>Centro médico digital</small>
+            </span>
           </Link>
           {user && (
             <Link to="/perfil" className="navbar-user" onClick={closeMenu}>
@@ -77,13 +92,18 @@ export function Layout() {
             </button>
           )}
           {!user && (
-            <Link to="/login" onClick={closeMenu}>
-              Ingresar
-            </Link>
+            <>
+              <Link to="/login" onClick={closeMenu}>
+                Ingresar
+              </Link>
+              <Link to="/register" className="navbar-cta" onClick={closeMenu}>
+                Crear cuenta
+              </Link>
+            </>
           )}
         </nav>
       </header>
-      <main className="app-content">
+      <main id="contenido" className="app-content">
         <Outlet />
       </main>
       <Footer />

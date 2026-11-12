@@ -5,11 +5,14 @@ export function Footer() {
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div>
-          <h4>MedGo</h4>
+          <h4 className="site-footer-brand">
+            <span className="navbar-logo-badge" aria-hidden="true">✚</span> MedGo
+          </h4>
           <p>
             Conectamos pacientes con profesionales de salud verificados para
             atención médica a domicilio, cuando y donde se necesita.
           </p>
+          <p className="site-footer-emergency">🚑 Emergencias: 106 (SAMU)</p>
         </div>
         <div>
           <h4>Navegación</h4>
@@ -32,11 +35,12 @@ export function Footer() {
           <h4>Contacto</h4>
           <p>contacto@medgo.pe</p>
           <p>(01) 000-0000</p>
-          <p>Lima, Perú</p>
+          <p>Puente Piedra, Lima</p>
+          <p>Lun – Dom · 7:00 a. m. – 10:00 p. m.</p>
         </div>
       </div>
       <div className="site-footer-bottom">
-        © {new Date().getFullYear()} MedGo. Proyecto de tesis — Universidad Privada del Norte.
+        © {new Date().getFullYear()} MedGo.
       </div>
     </footer>
   );
