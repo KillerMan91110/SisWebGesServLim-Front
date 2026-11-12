@@ -37,6 +37,7 @@ const ACCIONES = {
   ver_historial_clinico: "Consultó historial clínico",
   crear_respaldo: "Creó un respaldo",
   descargar_respaldo: "Descargó un respaldo",
+  supervisar_chat: "Supervisó el chat de una atención",
 };
 
 const num = (v) => (v === null || v === undefined ? null : Number(v));

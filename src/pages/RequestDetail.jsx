@@ -42,12 +42,17 @@ export function RequestDetail() {
   const watchIdRef = useRef(null);
   const [historial, setHistorial] = useState(null);
   const chatBoxRef = useRef(null);
+  const [escribiendo, setEscribiendo] = useState({});
+  const timersEscribiendo = useRef({});
+  const ultimoAvisoRef = useRef(0);
+  const pararEscribirRef = useRef(null);
+  const cuantosEscriben = Object.keys(escribiendo).length;
 
   // Mantener visible el último mensaje del chat (solo se desplaza la caja, no la página)
   useEffect(() => {
     const caja = chatBoxRef.current;
     if (caja) caja.scrollTop = caja.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, cuantosEscriben]);
 
   const esMedicoAsignado = user?.rol === "medico" && request?.medico_id === user?.id;
   useEffect(() => {
@@ -87,8 +92,17 @@ export function RequestDetail() {
     });
     socket.on("mensaje:nuevo", (msg) => {
       if (String(msg.solicitud_id) === String(id)) {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+        quitarEscribiendo(msg.remitente_id);
       }
+    });
+    socket.on("chat:escribiendo", (p) => {
+      if (String(p.solicitudId) !== String(id)) return;
+      if (!p.escribiendo) return quitarEscribiendo(p.usuarioId);
+      setEscribiendo((prev) => ({ ...prev, [p.usuarioId]: { nombre: p.nombre, rol: p.rol } }));
+      // Seguridad: si no llega el "dejó de escribir", se apaga solo a los 5 s
+      clearTimeout(timersEscribiendo.current[p.usuarioId]);
+      timersEscribiendo.current[p.usuarioId] = setTimeout(() => quitarEscribiendo(p.usuarioId), 5000);
     });
     // El evento trae la fila sin los datos unidos (nombres, consultorio):
     // se vuelve a pedir la solicitud completa para no perderlos.
@@ -99,12 +113,40 @@ export function RequestDetail() {
     });
 
     return () => {
+      socket.emit("chat:escribiendo", { solicitudId: id, escribiendo: false });
       socket.emit("solicitud:salir", id);
       socket.off("ubicacion:medico");
       socket.off("mensaje:nuevo");
+      socket.off("chat:escribiendo");
       socket.off("solicitud:actualizada");
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  function quitarEscribiendo(usuarioId) {
+    clearTimeout(timersEscribiendo.current[usuarioId]);
+    setEscribiendo((prev) => {
+      if (!prev[usuarioId]) return prev;
+      const { [usuarioId]: _fuera, ...resto } = prev;
+      return resto;
+    });
+  }
+
+  // Avisa a la otra persona que estoy escribiendo (como máximo cada 1,5 s)
+  // y que dejé de hacerlo tras 2 s sin teclear.
+  function avisarEscribiendo() {
+    const socket = connectSocket();
+    const ahora = Date.now();
+    if (ahora - ultimoAvisoRef.current > 1500) {
+      socket.emit("chat:escribiendo", { solicitudId: id, escribiendo: true });
+      ultimoAvisoRef.current = ahora;
+    }
+    clearTimeout(pararEscribirRef.current);
+    pararEscribirRef.current = setTimeout(() => {
+      socket.emit("chat:escribiendo", { solicitudId: id, escribiendo: false });
+      ultimoAvisoRef.current = 0;
+    }, 2000);
+  }
 
   useEffect(() => {
     if (user?.rol !== "medico" || !navigator.geolocation) return;
@@ -135,6 +177,9 @@ export function RequestDetail() {
     socket.emit("mensaje:enviar", { solicitudId: id, contenido: draft }, (ack) => {
       if (ack?.error) setError(ack.error);
     });
+    clearTimeout(pararEscribirRef.current);
+    socket.emit("chat:escribiendo", { solicitudId: id, escribiendo: false });
+    ultimoAvisoRef.current = 0;
     setDraft("");
   }
 
@@ -197,6 +242,9 @@ export function RequestDetail() {
       ? { etiqueta: "Paciente", nombre: request.paciente_nombre }
       : { etiqueta: "Médico", nombre: request.medico_nombre };
   const chatActivo = ["aceptada", "en_camino", "en_atencion"].includes(request.estado);
+  // El admin que no es parte de la solicitud ve el chat en modo supervisión (solo lectura)
+  const supervision =
+    user?.rol === "admin" && request.paciente_id !== user?.id && request.medico_id !== user?.id;
 
   return (
     <div className="detail-layout">
@@ -482,42 +530,103 @@ export function RequestDetail() {
 
       <aside id="chat" className="detail-side no-print">
         <section className="panel chat-panel">
-          <div className="chat-head">
-            <span className="chat-avatar" aria-hidden="true">
-              {user?.rol === "medico" ? "🧑" : "🩺"}
-            </span>
-            <div>
-              <strong>{contraparte.nombre ?? "Esperando a un médico"}</strong>
-              <small>{contraparte.nombre ? contraparte.etiqueta : "El chat se habilita al aceptar"}</small>
+          {supervision ? (
+            <div className="chat-head chat-head--supervision">
+              <span className="chat-avatar" aria-hidden="true">👁️</span>
+              <div>
+                <strong>Supervisión del chat</strong>
+                <small>
+                  🧑 {request.paciente_nombre ?? "Paciente"} · 🩺 {request.medico_nombre ?? "Sin médico asignado"}
+                </small>
+              </div>
             </div>
-          </div>
-          <div className="chat-messages" ref={chatBoxRef}>
+          ) : (
+            <div className="chat-head">
+              <span className="chat-avatar" aria-hidden="true">
+                {user?.rol === "medico" ? "🧑" : "🩺"}
+              </span>
+              <div>
+                <strong>{contraparte.nombre ?? "Esperando a un médico"}</strong>
+                <small>
+                  {Object.keys(escribiendo).length > 0
+                    ? "escribiendo..."
+                    : contraparte.nombre
+                      ? contraparte.etiqueta
+                      : "El chat se habilita al aceptar"}
+                </small>
+              </div>
+            </div>
+          )}
+          <div className="chat-messages" ref={chatBoxRef} aria-live="polite">
             {messages.length === 0 && (
               <p className="chat-empty">
-                {chatActivo
+                {chatActivo && !supervision
                   ? "Aún no hay mensajes. Escribe para coordinar los detalles de la atención."
                   : "Aún no hay mensajes."}
               </p>
             )}
-            {messages.map((m) => (
+            {messages.map((m, i) => {
+              const propio = m.remitente_id === user?.id;
+              // En supervisión: médico a la derecha, paciente a la izquierda
+              const derecha = supervision ? m.remitente_rol === "medico" : propio;
+              const mostrarNombre = i === 0 || messages[i - 1].remitente_id !== m.remitente_id;
+              return (
+                <div key={m.id} className={`chat-row ${derecha ? "chat-row--right" : ""}`}>
+                  {mostrarNombre && (
+                    <span className="chat-author">
+                      {propio ? "Tú" : m.remitente_nombre ?? "Usuario"}
+                      {m.remitente_rol && !propio && (
+                        <em>{m.remitente_rol === "medico" ? " · Médico" : " · Paciente"}</em>
+                      )}
+                    </span>
+                  )}
+                  <div
+                    className={`chat-bubble ${derecha ? "chat-bubble--own" : ""} ${
+                      supervision && m.remitente_rol === "paciente" ? "chat-bubble--paciente" : ""
+                    }`}
+                  >
+                    {m.contenido}
+                    {m.enviado_en && (
+                      <time>
+                        {new Date(m.enviado_en).toLocaleTimeString("es-PE", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {Object.entries(escribiendo).map(([uid, quien]) => (
               <div
-                key={m.id}
-                className={`chat-bubble ${m.remitente_id === user?.id ? "chat-bubble--own" : ""}`}
+                key={`typing-${uid}`}
+                className={`chat-row ${supervision && quien.rol === "medico" ? "chat-row--right" : ""}`}
               >
-                {m.contenido}
-                {m.enviado_en && (
-                  <time>
-                    {new Date(m.enviado_en).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}
-                  </time>
-                )}
+                <span className="chat-author">
+                  {quien.nombre} está escribiendo
+                </span>
+                <div className="chat-bubble chat-typing" aria-label={`${quien.nombre} está escribiendo`}>
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
             ))}
           </div>
-          {chatActivo ? (
+          {supervision ? (
+            <p className="form-hint chat-supervision-note">
+              🔒 Modo supervisión: solo lectura. Los mensajes llegan en tiempo real y este acceso queda
+              registrado en la auditoría.
+            </p>
+          ) : chatActivo ? (
             <form className="chat-input" onSubmit={sendMessage}>
               <input
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  if (e.target.value.trim()) avisarEscribiendo();
+                }}
                 placeholder="Escribe un mensaje..."
                 aria-label="Mensaje"
               />
