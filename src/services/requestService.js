@@ -6,6 +6,10 @@ export function createRequest({ tipoProcedimiento, descripcion, lat, lng, modali
     .then((res) => res.data.solicitud);
 }
 
+export function registrarLlegada(id) {
+  return api.post(`/solicitudes/${id}/llegada`).then((res) => res.data.solicitud);
+}
+
 export function getAgenda() {
   return api.get("/solicitudes/agenda").then((res) => res.data.citas);
 }

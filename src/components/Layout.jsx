@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Footer } from "./Footer";
+import { NotificationBell } from "./NotificationBell";
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -47,6 +48,8 @@ export function Layout() {
             </Link>
           )}
         </div>
+
+        {user && <NotificationBell userId={user.id} />}
 
         <button
           className="navbar-toggle"

@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   cancelRequest,
   finishRequest,
+  registrarLlegada,
   getMessages,
   getRequest,
   getHistorialClinico,
@@ -139,6 +140,15 @@ export function RequestDetail() {
     }
   }
 
+  async function handleLlegada() {
+    try {
+      await registrarLlegada(id);
+      setRequest(await getRequest(id));
+    } catch (err) {
+      setError(err.response?.data?.error ?? "No se pudo registrar la llegada.");
+    }
+  }
+
   async function handleFinish(e) {
     e.preventDefault();
     try {
@@ -251,6 +261,11 @@ export function RequestDetail() {
                 Cancelar solicitud
               </button>
             )}
+          {esMedicoAsignado && request.modalidad === "consultorio" && request.estado === "aceptada" && (
+            <button className="btn btn-success" onClick={handleLlegada}>
+              🏥 Paciente llegó al consultorio
+            </button>
+          )}
         </div>
 
         {user?.rol === "medico" &&
