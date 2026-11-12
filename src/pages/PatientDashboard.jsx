@@ -323,6 +323,9 @@ export function PatientDashboard() {
                     : tiempoDesde(r.creado_en)}
                   {r.medico_nombre ? ` · ${r.medico_nombre}` : ""}
                 </div>
+                {r.modalidad === "consultorio" && r.medico_direccion_consultorio && (
+                  <div className="request-card-meta">🏥 {r.medico_direccion_consultorio}</div>
+                )}
               </div>
               <StatusBadge estado={r.estado} />
               <span className="request-card-chevron">→</span>

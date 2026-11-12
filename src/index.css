@@ -2410,3 +2410,20 @@ button[type="submit"]:hover:not(:disabled) {
 
 a.btn { text-decoration: none; }
 a.btn-primary { color: #fff; }
+
+.consultorio-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  margin: 8px 0 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid #b7e3d6;
+  font-size: 22px;
+}
+
+.consultorio-card div { font-size: 14px; }
+.consultorio-card strong { color: #0b5f50; }
+.consultorio-card p { margin: 2px 0 6px; color: var(--text); font-weight: 600; }
+.consultorio-card a { color: #0b5f50; font-weight: 600; }

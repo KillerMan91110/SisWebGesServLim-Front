@@ -82,9 +82,11 @@ export function RequestDetail() {
         setMessages((prev) => [...prev, msg]);
       }
     });
+    // El evento trae la fila sin los datos unidos (nombres, consultorio):
+    // se vuelve a pedir la solicitud completa para no perderlos.
     socket.on("solicitud:actualizada", (updated) => {
       if (String(updated.id) === String(id)) {
-        setRequest(updated);
+        getRequest(id).then(setRequest).catch(() => setRequest((prev) => ({ ...prev, ...updated })));
       }
     });
 
@@ -99,6 +101,8 @@ export function RequestDetail() {
   useEffect(() => {
     if (user?.rol !== "medico" || !navigator.geolocation) return;
     if (!["aceptada", "en_camino", "en_atencion"].includes(request?.estado)) return;
+    // En consultorio el médico no se desplaza: no se transmite su ubicación.
+    if (request?.modalidad === "consultorio") return;
 
     watchIdRef.current = navigator.geolocation.watchPosition((pos) => {
       const socket = connectSocket();
@@ -114,7 +118,7 @@ export function RequestDetail() {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, [id, user, request?.estado]);
+  }, [id, user, request?.estado, request?.modalidad]);
 
   function sendMessage(e) {
     e.preventDefault();
@@ -128,8 +132,8 @@ export function RequestDetail() {
 
   async function handleCancel() {
     try {
-      const updated = await cancelRequest(id);
-      setRequest(updated);
+      await cancelRequest(id);
+      setRequest(await getRequest(id));
     } catch (err) {
       setError(err.response?.data?.error ?? "No se pudo cancelar la solicitud.");
     }
@@ -138,8 +142,8 @@ export function RequestDetail() {
   async function handleFinish(e) {
     e.preventDefault();
     try {
-      const updated = await finishRequest(id, reportForm);
-      setRequest(updated);
+      await finishRequest(id, reportForm);
+      setRequest(await getRequest(id));
     } catch (err) {
       setError(err.response?.data?.error ?? "No se pudo finalizar la solicitud.");
     }
@@ -194,10 +198,32 @@ export function RequestDetail() {
           )}
         </div>
         <p>{request.descripcion}</p>
-        {request.modalidad === "consultorio" && request.medico_id && (
+        {request.modalidad === "consultorio" && !request.medico_id && (
           <p className="notice-inline">
-            🏥 Consultorio: {request.medico_direccion_consultorio || "el médico te indicará la dirección por chat"}
+            🏥 Cuando un médico acepte tu solicitud, aquí verás la dirección de su consultorio.
           </p>
+        )}
+        {request.modalidad === "consultorio" && request.medico_id && (
+          <div className="consultorio-card">
+            <span aria-hidden="true">🏥</span>
+            <div>
+              <strong>
+                {user?.rol === "medico" ? "El paciente acudirá a tu consultorio" : `Consultorio de ${request.medico_nombre}`}
+              </strong>
+              <p>{request.medico_direccion_consultorio || "Dirección aún no registrada"}</p>
+              {request.medico_direccion_consultorio && (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    request.medico_direccion_consultorio
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Cómo llegar (Google Maps) ↗
+                </a>
+              )}
+            </div>
+          </div>
         )}
         {contraparte.nombre && (
           <p className="form-hint">
