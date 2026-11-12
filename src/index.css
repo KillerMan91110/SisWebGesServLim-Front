@@ -2587,3 +2587,23 @@ a.btn-primary { color: #fff; }
 @media (min-width: 721px) {
   .navbar-links { margin-left: auto; }
 }
+
+.map-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.radio-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.radio-select select { padding: 4px 8px; }

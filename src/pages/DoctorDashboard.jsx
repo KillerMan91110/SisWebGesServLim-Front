@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { MapView } from "../components/MapView";
 import { StatusBadge } from "../components/StatusBadge";
@@ -46,6 +46,8 @@ export function DoctorDashboard() {
   const [agenda, setAgenda] = useState([]);
   const [consultorio, setConsultorio] = useState("");
   const [consultorioGuardado, setConsultorioGuardado] = useState(null);
+  const [fuenteUbicacion, setFuenteUbicacion] = useState("buscando");
+  const [radioKm, setRadioKm] = useState(20);
 
   useEffect(() => {
     getAttendedRequests()
@@ -74,17 +76,47 @@ export function DoctorDashboard() {
     }
   }
 
+  // Ubicación: GPS del navegador; si falla, la última guardada del médico; si no hay, centro de Lima.
   useEffect(() => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) =>
-      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+    let resuelto = false;
+    const usarGuardada = () =>
+      getPerfilMedico()
+        .then((perfil) => {
+          if (resuelto) return;
+          if (perfil.lat_actual != null && perfil.lng_actual != null) {
+            setLocation({ lat: perfil.lat_actual, lng: perfil.lng_actual });
+            setFuenteUbicacion("guardada");
+          } else {
+            setFuenteUbicacion("aproximada");
+          }
+        })
+        .catch(() => setFuenteUbicacion("aproximada"));
+
+    if (!navigator.geolocation) {
+      usarGuardada();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resuelto = true;
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setFuenteUbicacion("gps");
+      },
+      usarGuardada,
+      { timeout: 8000 }
     );
   }, []);
+
+  // Refs para que los eventos en tiempo real usen siempre la ubicación y radio actuales
+  const ubicacionRef = useRef(location);
+  const radioRef = useRef(radioKm);
+  ubicacionRef.current = location;
+  radioRef.current = radioKm;
 
   useEffect(() => {
     loadNearby();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.lat, location.lng]);
+  }, [location.lat, location.lng, radioKm]);
 
   useEffect(() => {
     const socket = connectSocket();
@@ -101,7 +133,8 @@ export function DoctorDashboard() {
 
   async function loadNearby() {
     try {
-      const data = await getNearbyRequests(location.lat, location.lng);
+      const { lat, lng } = ubicacionRef.current;
+      const data = await getNearbyRequests(lat, lng, radioRef.current * 1000);
       setRequests(data);
     } catch {
       setRequests([]);
@@ -122,6 +155,15 @@ export function DoctorDashboard() {
       setError(err.response?.data?.error ?? "No se pudo actualizar tu disponibilidad.");
     } finally {
       setTogglingDisponible(false);
+    }
+  }
+
+  function handleRestaurarRechazadas() {
+    setRechazadas(new Set());
+    try {
+      localStorage.removeItem(rechazadasKey(user.id));
+    } catch {
+      // sin localStorage: basta con limpiar el estado
     }
   }
 
@@ -208,13 +250,39 @@ export function DoctorDashboard() {
             {disponible ? "🟢 En línea" : "⚪ Fuera de línea"}
           </button>
         </div>
+        <div className="map-toolbar">
+          <span className={`location-indicator ${fuenteUbicacion === "gps" ? "" : "location-indicator--pending"}`}>
+            {fuenteUbicacion === "gps" && "Usando tu ubicación actual"}
+            {fuenteUbicacion === "buscando" && "Obteniendo tu ubicación..."}
+            {fuenteUbicacion === "guardada" && "Sin GPS: usando tu última ubicación registrada"}
+            {fuenteUbicacion === "aproximada" &&
+              "Sin GPS: activa la ubicación del navegador para ver solicitudes cercanas"}
+          </span>
+          <label className="radio-select">
+            Radio
+            <select value={radioKm} onChange={(e) => setRadioKm(Number(e.target.value))}>
+              {[5, 10, 20, 50].map((km) => (
+                <option key={km} value={km}>
+                  {km} km
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <MapView center={location} markers={markers} zoom={13} height={420} />
       </section>
 
       <section className="panel">
         <h2>Detalle de solicitudes</h2>
         {error && <p className="form-error">{error}</p>}
-        {visibleRequests.length === 0 && <p>No hay solicitudes activas cerca de ti.</p>}
+        {visibleRequests.length === 0 && (
+          <p className="form-hint">No hay solicitudes pendientes en un radio de {radioKm} km.</p>
+        )}
+        {requests.length > visibleRequests.length && (
+          <button type="button" className="btn btn-outline btn-sm" onClick={handleRestaurarRechazadas}>
+            Mostrar {requests.length - visibleRequests.length} solicitud(es) que ocultaste
+          </button>
+        )}
         <ul className="request-list">
           {visibleRequests.map((r) => (
             <li key={r.id} className="request-list-item request-list-item--card">
@@ -252,7 +320,7 @@ export function DoctorDashboard() {
                   onClick={() => handleReject(r.id)}
                   disabled={acceptingId === r.id}
                 >
-                  Rechazar
+                  Ocultar
                 </button>
               </div>
             </li>

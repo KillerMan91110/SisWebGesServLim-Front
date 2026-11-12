@@ -26,9 +26,9 @@ export function getAttendedRequests() {
   return api.get("/solicitudes/atendidas").then((res) => res.data.solicitudes);
 }
 
-export function getNearbyRequests(lat, lng) {
+export function getNearbyRequests(lat, lng, radio) {
   return api
-    .get("/solicitudes/cercanas", { params: { lat, lng } })
+    .get("/solicitudes/cercanas", { params: { lat, lng, radio } })
     .then((res) => res.data.solicitudes);
 }
 
