@@ -4,10 +4,16 @@ import { MapView } from "../components/MapView";
 import { StatusBadge } from "../components/StatusBadge";
 import {
   acceptRequest,
+  getAgenda,
   getAttendedRequests,
   getNearbyRequests,
 } from "../services/requestService";
-import { setDisponibilidad } from "../services/medicoService";
+import {
+  getPerfilMedico,
+  setDireccionConsultorio,
+  setDisponibilidad,
+} from "../services/medicoService";
+import { formatFechaHora, MODALIDADES } from "../utils/formato";
 import { connectSocket } from "../services/socket";
 import { useAuth } from "../context/AuthContext";
 
@@ -37,12 +43,36 @@ export function DoctorDashboard() {
   const [togglingDisponible, setTogglingDisponible] = useState(false);
   const [atendidas, setAtendidas] = useState([]);
   const [rechazadas, setRechazadas] = useState(() => leerRechazadas(user.id));
+  const [agenda, setAgenda] = useState([]);
+  const [consultorio, setConsultorio] = useState("");
+  const [consultorioGuardado, setConsultorioGuardado] = useState(null);
 
   useEffect(() => {
     getAttendedRequests()
       .then(setAtendidas)
       .catch(() => setAtendidas([]));
+    getAgenda()
+      .then(setAgenda)
+      .catch(() => setAgenda([]));
+    getPerfilMedico()
+      .then((perfil) => {
+        setDisponible(perfil.disponible);
+        setConsultorio(perfil.direccion_consultorio ?? "");
+      })
+      .catch(() => {});
   }, []);
+
+  async function handleGuardarConsultorio(e) {
+    e.preventDefault();
+    setConsultorioGuardado(null);
+    try {
+      const perfil = await setDireccionConsultorio(consultorio);
+      setConsultorio(perfil.direccion_consultorio ?? "");
+      setConsultorioGuardado("Dirección guardada.");
+    } catch (err) {
+      setError(err.response?.data?.error ?? "No se pudo guardar la dirección del consultorio.");
+    }
+  }
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -132,8 +162,41 @@ export function DoctorDashboard() {
     color: "orange",
   }));
 
+  const primerNombre = user?.nombre?.split(" ").slice(0, 2).join(" ");
+
   return (
     <div className="dashboard">
+      <div className="dashboard-header">
+        <div>
+          <h1>Hola, {primerNombre} 🩺</h1>
+          <p>Revisa las solicitudes cercanas, tu agenda de citas y tus atenciones.</p>
+        </div>
+      </div>
+
+      <div className="quick-stats dashboard-quick-stats">
+        <div className="quick-stat-card">
+          <span className="quick-stat-icon">📍</span>
+          <div>
+            <div className="stat-value">{visibleRequests.length}</div>
+            <div className="stat-label">Solicitudes cercanas</div>
+          </div>
+        </div>
+        <div className="quick-stat-card">
+          <span className="quick-stat-icon">📅</span>
+          <div>
+            <div className="stat-value">{agenda.length}</div>
+            <div className="stat-label">Citas en agenda</div>
+          </div>
+        </div>
+        <div className="quick-stat-card">
+          <span className="quick-stat-icon">✅</span>
+          <div>
+            <div className="stat-value">{atendidas.filter((a) => a.estado === "finalizada").length}</div>
+            <div className="stat-label">Atenciones finalizadas</div>
+          </div>
+        </div>
+      </div>
+
       <section className="panel">
         <div className="request-header">
           <h2>Solicitudes cercanas</h2>
@@ -157,6 +220,23 @@ export function DoctorDashboard() {
             <li key={r.id} className="request-list-item request-list-item--card">
               <div>
                 <strong>{r.tipo_procedimiento}</strong>
+                <div className="tag-row">
+                  <span className="tag">
+                    {MODALIDADES[r.modalidad]?.icon} {MODALIDADES[r.modalidad]?.label}
+                  </span>
+                  {r.programada_para ? (
+                    <span className="tag tag--cita">📅 {formatFechaHora(r.programada_para)}</span>
+                  ) : (
+                    <span className="tag tag--urgente">⚡ Inmediata</span>
+                  )}
+                  {r.distancia_metros != null && (
+                    <span className="tag">
+                      📍 {r.distancia_metros < 1000
+                        ? `${r.distancia_metros} m`
+                        : `${(r.distancia_metros / 1000).toFixed(1)} km`}
+                    </span>
+                  )}
+                </div>
                 <p>{r.descripcion}</p>
               </div>
               <div className="request-list-item-actions">
@@ -178,6 +258,62 @@ export function DoctorDashboard() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="panel">
+        <h2>📅 Mi agenda de citas</h2>
+        {agenda.length === 0 && (
+          <div className="empty-state">
+            <span className="empty-state-icon">🗓️</span>
+            <p>No tienes citas programadas pendientes.</p>
+          </div>
+        )}
+        <ul className="agenda-list">
+          {agenda.map((c) => (
+            <li key={c.id}>
+              <Link to={`/solicitud/${c.id}`} className="agenda-item">
+                <span className="agenda-date">
+                  <b>{new Date(c.programada_para).toLocaleDateString("es-PE", { day: "2-digit" })}</b>
+                  {new Date(c.programada_para).toLocaleDateString("es-PE", { month: "short" })}
+                </span>
+                <span className="agenda-body">
+                  <strong>{c.tipo_procedimiento}</strong>
+                  <small>
+                    {new Date(c.programada_para).toLocaleTimeString("es-PE", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
+                    · {c.paciente_nombre} · {MODALIDADES[c.modalidad]?.icon}{" "}
+                    {MODALIDADES[c.modalidad]?.label}
+                  </small>
+                </span>
+                <StatusBadge estado={c.estado} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="panel">
+        <h2>🏥 Mi consultorio</h2>
+        <p className="form-hint">
+          Los pacientes que elijan «En consultorio» verán esta dirección al ser aceptados.
+        </p>
+        <form className="request-form" onSubmit={handleGuardarConsultorio}>
+          <label>
+            Dirección del consultorio
+            <input
+              value={consultorio}
+              maxLength={255}
+              placeholder="Ej.: Av. Puente Piedra 123, consultorio 4"
+              onChange={(e) => setConsultorio(e.target.value)}
+            />
+          </label>
+          {consultorioGuardado && <p className="form-success">✔ {consultorioGuardado}</p>}
+          <button className="btn btn-primary" type="submit">
+            Guardar dirección
+          </button>
+        </form>
       </section>
 
       <section className="panel dashboard-full">

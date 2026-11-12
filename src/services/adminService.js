@@ -42,3 +42,29 @@ export async function downloadSolicitudesCsv({ desde, hasta } = {}) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+export function getAuditoria() {
+  return api.get("/admin/auditoria").then((res) => res.data.registros);
+}
+
+export function getRespaldos() {
+  return api.get("/admin/respaldos").then((res) => res.data.respaldos);
+}
+
+export function createRespaldo() {
+  return api.post("/admin/respaldos").then((res) => res.data.respaldo);
+}
+
+export async function downloadRespaldo(nombre) {
+  const res = await api.get(`/admin/respaldos/${encodeURIComponent(nombre)}`, {
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

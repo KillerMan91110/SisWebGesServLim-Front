@@ -8,9 +8,11 @@ import {
   finishRequest,
   getMessages,
   getRequest,
+  getHistorialClinico,
   getReport,
   rateRequest,
 } from "../services/requestService";
+import { calcularEdad, formatFecha, formatFechaHora, MODALIDADES } from "../utils/formato";
 import { connectSocket } from "../services/socket";
 
 function formatDistancia(metros) {
@@ -37,6 +39,15 @@ export function RequestDetail() {
   const [rating, setRating] = useState({ puntaje: 5, comentario: "" });
   const [distanciaMetros, setDistanciaMetros] = useState(null);
   const watchIdRef = useRef(null);
+  const [historial, setHistorial] = useState(null);
+
+  const esMedicoAsignado = user?.rol === "medico" && request?.medico_id === user?.id;
+  useEffect(() => {
+    if (!esMedicoAsignado && user?.rol !== "admin") return;
+    getHistorialClinico(id)
+      .then(setHistorial)
+      .catch(() => setHistorial(null));
+  }, [id, esMedicoAsignado, user?.rol]);
 
   useEffect(() => {
     getRequest(id)
@@ -172,7 +183,22 @@ export function RequestDetail() {
           <h2>{request.tipo_procedimiento}</h2>
           <StatusBadge estado={request.estado} />
         </div>
+        <div className="tag-row">
+          <span className="tag">
+            {MODALIDADES[request.modalidad]?.icon} {MODALIDADES[request.modalidad]?.label}
+          </span>
+          {request.programada_para ? (
+            <span className="tag tag--cita">📅 Cita: {formatFechaHora(request.programada_para)}</span>
+          ) : (
+            <span className="tag tag--urgente">⚡ Atención inmediata</span>
+          )}
+        </div>
         <p>{request.descripcion}</p>
+        {request.modalidad === "consultorio" && request.medico_id && (
+          <p className="notice-inline">
+            🏥 Consultorio: {request.medico_direccion_consultorio || "el médico te indicará la dirección por chat"}
+          </p>
+        )}
         {contraparte.nombre && (
           <p className="form-hint">
             {contraparte.etiqueta}: {contraparte.nombre}
@@ -249,8 +275,18 @@ export function RequestDetail() {
           )}
 
         {report && (
-          <div className="panel">
-            <h3>Reporte de atención</h3>
+          <div className="panel report-print">
+            <div className="request-header">
+              <h3>Reporte de atención</h3>
+              <button type="button" className="btn btn-outline btn-sm no-print" onClick={() => window.print()}>
+                🖨️ Imprimir / PDF
+              </button>
+            </div>
+            <p className="form-hint">
+              {request.tipo_procedimiento} · Paciente: {request.paciente_nombre} · Médico:{" "}
+              {request.medico_nombre}
+              {request.finalizado_en ? ` · ${formatFechaHora(request.finalizado_en)}` : ""}
+            </p>
             <p>
               <strong>Diagnóstico:</strong> {report.diagnostico || "—"}
             </p>
@@ -307,7 +343,87 @@ export function RequestDetail() {
         )}
       </section>
 
-      <section className="panel">
+      {historial && (
+        <section className="panel clinical-panel">
+          <h2>🩺 Historial clínico de {historial.paciente.nombre}</h2>
+          {!historial.ficha && (
+            <p className="form-hint">El paciente aún no completó su ficha clínica.</p>
+          )}
+          {historial.ficha && (
+            <>
+              {historial.ficha.alergias && (
+                <div className="allergy-alert" role="alert">
+                  <strong>⚠️ Alergias:</strong> {historial.ficha.alergias}
+                </div>
+              )}
+              <dl className="clinical-grid">
+                <div>
+                  <dt>DNI</dt>
+                  <dd>{historial.ficha.dni || "—"}</dd>
+                </div>
+                <div>
+                  <dt>Edad</dt>
+                  <dd>
+                    {calcularEdad(historial.ficha.fecha_nacimiento) ?? "—"}
+                    {historial.ficha.fecha_nacimiento ? " años" : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Sexo</dt>
+                  <dd className="capitalize">{historial.ficha.sexo || "—"}</dd>
+                </div>
+                <div>
+                  <dt>Grupo sanguíneo</dt>
+                  <dd>{historial.ficha.grupo_sanguineo || "—"}</dd>
+                </div>
+                <div className="clinical-grid-wide">
+                  <dt>Antecedentes</dt>
+                  <dd>{historial.ficha.antecedentes || "—"}</dd>
+                </div>
+                <div className="clinical-grid-wide">
+                  <dt>Medicación actual</dt>
+                  <dd>{historial.ficha.medicacion_actual || "—"}</dd>
+                </div>
+                <div className="clinical-grid-wide">
+                  <dt>Contacto de emergencia</dt>
+                  <dd>
+                    {historial.ficha.contacto_emergencia_nombre || "—"}
+                    {historial.ficha.contacto_emergencia_telefono
+                      ? ` · ${historial.ficha.contacto_emergencia_telefono}`
+                      : ""}
+                  </dd>
+                </div>
+              </dl>
+            </>
+          )}
+          <h3>Atenciones anteriores ({historial.atenciones.length})</h3>
+          {historial.atenciones.length === 0 && <p className="form-hint">Sin atenciones previas.</p>}
+          <ol className="timeline">
+            {historial.atenciones.map((a) => (
+              <li key={a.id} className="timeline-item">
+                <div className="timeline-head">
+                  <strong>{a.tipo_procedimiento}</strong>
+                  <span className="form-hint">{formatFecha(a.finalizado_en)}</span>
+                </div>
+                <div className="form-hint">Atendido por {a.medico_nombre}</div>
+                {a.diagnostico && (
+                  <p>
+                    <b>Diagnóstico:</b> {a.diagnostico}
+                  </p>
+                )}
+                {a.procedimiento_realizado && (
+                  <p>
+                    <b>Procedimiento:</b> {a.procedimiento_realizado}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+          <p className="form-hint">🔒 Esta consulta queda registrada en la auditoría del sistema.</p>
+        </section>
+      )}
+
+      <section className="panel no-print">
         <h2>Chat</h2>
         <div className="chat-messages">
           {messages.length === 0 && <p>Aún no hay mensajes.</p>}

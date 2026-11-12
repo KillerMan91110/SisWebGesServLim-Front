@@ -1,9 +1,17 @@
 import { api } from "./api";
 
-export function createRequest({ tipoProcedimiento, descripcion, lat, lng }) {
+export function createRequest({ tipoProcedimiento, descripcion, lat, lng, modalidad, programadaPara }) {
   return api
-    .post("/solicitudes", { tipoProcedimiento, descripcion, lat, lng })
+    .post("/solicitudes", { tipoProcedimiento, descripcion, lat, lng, modalidad, programadaPara })
     .then((res) => res.data.solicitud);
+}
+
+export function getAgenda() {
+  return api.get("/solicitudes/agenda").then((res) => res.data.citas);
+}
+
+export function getHistorialClinico(id) {
+  return api.get(`/solicitudes/${id}/historial-clinico`).then((res) => res.data);
 }
 
 export function getMyRequests() {

@@ -9,3 +9,13 @@ export function setDisponibilidad({ disponible, lat, lng }) {
     .patch("/medicos/disponibilidad", { disponible, lat, lng })
     .then((res) => res.data.perfil);
 }
+
+export function getPerfilMedico() {
+  return api.get("/medicos/perfil").then((res) => res.data.perfil);
+}
+
+export function setDireccionConsultorio(direccionConsultorio) {
+  return api
+    .patch("/medicos/perfil/consultorio", { direccionConsultorio })
+    .then((res) => res.data.perfil);
+}

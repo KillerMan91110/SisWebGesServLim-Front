@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { createRequest, getMyRequests } from "../services/requestService";
 import { StatusBadge } from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
+import { getFicha } from "../services/pacienteService";
+import { aInputLocal, formatFechaHora, MODALIDADES } from "../utils/formato";
 
 const TIPOS_PROCEDIMIENTO = [
   { label: "Vía intravenosa / catéter", icon: "💉" },
@@ -13,6 +15,14 @@ const TIPOS_PROCEDIMIENTO = [
 ];
 
 const ACTIVOS = ["pendiente", "aceptada", "en_camino", "en_atencion"];
+
+const FORM_INICIAL = {
+  tipoProcedimiento: TIPOS_PROCEDIMIENTO[0].label,
+  descripcion: "",
+  modalidad: "domicilio",
+  cuando: "ahora",
+  programadaPara: "",
+};
 
 function iconoPara(tipo) {
   return TIPOS_PROCEDIMIENTO.find((t) => t.label === tipo)?.icon ?? "📋";
@@ -33,10 +43,8 @@ export function PatientDashboard() {
   const { user } = useAuth();
   const [requests, setRequests] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
-  const [form, setForm] = useState({
-    tipoProcedimiento: TIPOS_PROCEDIMIENTO[0].label,
-    descripcion: "",
-  });
+  const [form, setForm] = useState(FORM_INICIAL);
+  const [fichaCompleta, setFichaCompleta] = useState(true);
   const [location, setLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -44,6 +52,9 @@ export function PatientDashboard() {
 
   useEffect(() => {
     loadRequests();
+    getFicha()
+      .then((f) => setFichaCompleta(Boolean(f?.dni && f?.fecha_nacimiento)))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -88,12 +99,30 @@ export function PatientDashboard() {
     setError(null);
     setSubmitting(true);
     try {
-      await createRequest({ ...form, lat: location.lat, lng: location.lng });
-      setForm({ tipoProcedimiento: TIPOS_PROCEDIMIENTO[0].label, descripcion: "" });
+      const programadaPara =
+        form.cuando === "programar" && form.programadaPara
+          ? new Date(form.programadaPara).toISOString()
+          : undefined;
+      if (form.cuando === "programar" && !programadaPara) {
+        setError("Elige la fecha y hora de tu cita.");
+        setSubmitting(false);
+        return;
+      }
+      await createRequest({
+        tipoProcedimiento: form.tipoProcedimiento,
+        descripcion: form.descripcion,
+        modalidad: form.modalidad,
+        programadaPara,
+        lat: location.lat,
+        lng: location.lng,
+      });
+      setForm(FORM_INICIAL);
       loadRequests();
     } catch (err) {
       setError(
-        err.response?.data?.error ?? "No se pudo publicar la solicitud."
+        err.response?.data?.detalles?.[0]?.mensaje ??
+          err.response?.data?.error ??
+          "No se pudo publicar la solicitud."
       );
     } finally {
       setSubmitting(false);
@@ -110,6 +139,19 @@ export function PatientDashboard() {
           <p>Publica una solicitud de atención o revisa el estado de las que ya tienes.</p>
         </div>
       </div>
+
+      {!fichaCompleta && (
+        <div className="notice-card dashboard-full">
+          <span aria-hidden="true">📝</span>
+          <div>
+            <strong>Completa tu ficha clínica</strong>
+            <p>Tus alergias y antecedentes ayudan al médico a atenderte de forma segura.</p>
+          </div>
+          <Link to="/paciente/ficha" className="btn btn-primary btn-sm">
+            Completar ficha
+          </Link>
+        </div>
+      )}
 
       <div className="quick-stats dashboard-quick-stats">
         <div className="quick-stat-card">
@@ -154,6 +196,77 @@ export function PatientDashboard() {
               ))}
             </select>
           </label>
+          <fieldset className="choice-group">
+            <legend>¿Dónde quieres que te atiendan?</legend>
+            {Object.entries(MODALIDADES).map(([valor, m]) => (
+              <label key={valor} className={`choice-card ${form.modalidad === valor ? "is-selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="modalidad"
+                  value={valor}
+                  checked={form.modalidad === valor}
+                  onChange={() => setForm((prev) => ({ ...prev, modalidad: valor }))}
+                />
+                <span className="choice-card-icon" aria-hidden="true">{m.icon}</span>
+                <span>
+                  <strong>{m.label}</strong>
+                  <small>
+                    {valor === "domicilio"
+                      ? "El profesional va a tu casa"
+                      : "Acudes al consultorio del médico"}
+                  </small>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset className="choice-group">
+            <legend>¿Cuándo?</legend>
+            <label className={`choice-card ${form.cuando === "ahora" ? "is-selected" : ""}`}>
+              <input
+                type="radio"
+                name="cuando"
+                value="ahora"
+                checked={form.cuando === "ahora"}
+                onChange={() => setForm((prev) => ({ ...prev, cuando: "ahora" }))}
+              />
+              <span className="choice-card-icon" aria-hidden="true">⚡</span>
+              <span>
+                <strong>Lo antes posible</strong>
+                <small>Atención inmediata</small>
+              </span>
+            </label>
+            <label className={`choice-card ${form.cuando === "programar" ? "is-selected" : ""}`}>
+              <input
+                type="radio"
+                name="cuando"
+                value="programar"
+                checked={form.cuando === "programar"}
+                onChange={() => setForm((prev) => ({ ...prev, cuando: "programar" }))}
+              />
+              <span className="choice-card-icon" aria-hidden="true">📅</span>
+              <span>
+                <strong>Programar cita</strong>
+                <small>Elige fecha y hora</small>
+              </span>
+            </label>
+          </fieldset>
+
+          {form.cuando === "programar" && (
+            <label>
+              Fecha y hora de la cita
+              <input
+                type="datetime-local"
+                value={form.programadaPara}
+                min={aInputLocal(new Date(Date.now() + 30 * 60000))}
+                max={aInputLocal(new Date(Date.now() + 60 * 86400000))}
+                onChange={(e) => setForm((prev) => ({ ...prev, programadaPara: e.target.value }))}
+                required
+              />
+              <span className="form-hint">Con al menos 30 minutos de anticipación y hasta 60 días.</span>
+            </label>
+          )}
+
           <label>
             Descripción
             <textarea
@@ -203,7 +316,13 @@ export function PatientDashboard() {
               <span className="request-card-icon">{iconoPara(r.tipo_procedimiento)}</span>
               <div className="request-card-body">
                 <strong>{r.tipo_procedimiento}</strong>
-                <div className="request-card-meta">{tiempoDesde(r.creado_en)}</div>
+                <div className="request-card-meta">
+                  {MODALIDADES[r.modalidad]?.icon} {MODALIDADES[r.modalidad]?.label} ·{" "}
+                  {r.programada_para
+                    ? `📅 Cita: ${formatFechaHora(r.programada_para)}`
+                    : tiempoDesde(r.creado_en)}
+                  {r.medico_nombre ? ` · ${r.medico_nombre}` : ""}
+                </div>
               </div>
               <StatusBadge estado={r.estado} />
               <span className="request-card-chevron">→</span>

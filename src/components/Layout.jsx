@@ -72,9 +72,14 @@ export function Layout() {
             </>
           )}
           {user?.rol === "paciente" && (
-            <Link to="/paciente" onClick={closeMenu}>
-              Mi panel
-            </Link>
+            <>
+              <Link to="/paciente" onClick={closeMenu}>
+                Mi panel
+              </Link>
+              <Link to="/paciente/ficha" onClick={closeMenu}>
+                Mi ficha clínica
+              </Link>
+            </>
           )}
           {user?.rol === "medico" && (
             <Link to="/medico" onClick={closeMenu}>

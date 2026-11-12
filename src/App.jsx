@@ -13,6 +13,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { AboutPage } from "./pages/AboutPage";
 import { StaffPage } from "./pages/StaffPage";
 import { ContactPage } from "./pages/ContactPage";
+import { FichaClinicaPage } from "./pages/FichaClinicaPage";
 
 export default function App() {
   return (
@@ -31,6 +32,14 @@ export default function App() {
               element={
                 <ProtectedRoute role="paciente">
                   <PatientDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/paciente/ficha"
+              element={
+                <ProtectedRoute role="paciente">
+                  <FichaClinicaPage />
                 </ProtectedRoute>
               }
             />
