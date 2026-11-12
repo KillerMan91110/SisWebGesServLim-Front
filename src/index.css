@@ -2987,3 +2987,56 @@ a.btn-primary { color: #fff; }
 .legal-section h2 { font-size: 20px; margin: 0 0 8px; }
 .legal-section p, .legal-section li { color: var(--text); font-size: 15px; }
 .legal-section ul { padding-left: 22px; }
+
+
+/* ---------- Seguimiento en el mapa y solicitudes nuevas ---------- */
+
+.tracking-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 10px 14px;
+  margin: 8px 0 10px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-size: 14px;
+}
+
+.tracking-eta {
+  font-weight: 700;
+  background: var(--surface);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.tracking-bar small { width: 100%; color: var(--text-muted); }
+
+.consultorio-ubicar { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.request-list-item.is-new {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 122, 103, 0.15);
+  animation: nueva-solicitud 1.2s ease-out 2;
+}
+
+.new-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: #0b5f50;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+@keyframes nueva-solicitud {
+  0% { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .request-list-item.is-new { animation: none; }
+}

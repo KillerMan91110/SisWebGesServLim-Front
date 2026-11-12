@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapView } from "./MapView";
 import { getMedicosCercanos } from "../services/medicoService";
+import { connectSocket } from "../services/socket";
 
 function iniciales(nombre) {
   return nombre
@@ -35,10 +36,13 @@ export function NearbyDoctors({ location }) {
         .catch(() => activo && setMedicos([]))
         .finally(() => activo && setCargando(false));
     cargar();
-    // La disponibilidad de los médicos cambia: se actualiza cada minuto
+    // Al instante cuando un médico se conecta o desconecta, y además cada minuto
+    const socket = connectSocket();
+    socket.on("medicos:disponibilidad", cargar);
     const intervalo = setInterval(cargar, 60000);
     return () => {
       activo = false;
+      socket.off("medicos:disponibilidad", cargar);
       clearInterval(intervalo);
     };
   }, [lat, lng, radioKm]);

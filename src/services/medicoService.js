@@ -14,9 +14,12 @@ export function getPerfilMedico() {
   return api.get("/medicos/perfil").then((res) => res.data.perfil);
 }
 
-export function setDireccionConsultorio(direccionConsultorio) {
+export function setDireccionConsultorio(direccionConsultorio, ubicacion) {
   return api
-    .patch("/medicos/perfil/consultorio", { direccionConsultorio })
+    .patch("/medicos/perfil/consultorio", {
+      direccionConsultorio,
+      ...(ubicacion ? { lat: ubicacion.lat, lng: ubicacion.lng } : {}),
+    })
     .then((res) => res.data.perfil);
 }
 

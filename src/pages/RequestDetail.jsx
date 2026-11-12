@@ -15,12 +15,7 @@ import {
 } from "../services/requestService";
 import { calcularEdad, formatFecha, formatFechaHora, MODALIDADES } from "../utils/formato";
 import { connectSocket } from "../services/socket";
-
-function formatDistancia(metros) {
-  if (metros === null || metros === undefined) return "calculando...";
-  if (metros < 1000) return `${Math.round(metros)} m`;
-  return `${(metros / 1000).toFixed(1)} km`;
-}
+import { textoDistancia, textoDuracion, useRuta } from "../utils/useRuta";
 
 export function RequestDetail() {
   const { id } = useParams();
@@ -39,6 +34,7 @@ export function RequestDetail() {
   });
   const [rating, setRating] = useState({ puntaje: 5, comentario: "" });
   const [distanciaMetros, setDistanciaMetros] = useState(null);
+  const [pacienteLive, setPacienteLive] = useState(null);
   const watchIdRef = useRef(null);
   const [historial, setHistorial] = useState(null);
   const chatBoxRef = useRef(null);
@@ -90,6 +86,11 @@ export function RequestDetail() {
         setDistanciaMetros(payload.distanciaMetros);
       }
     });
+    socket.on("ubicacion:paciente", (p) => {
+      if (String(p.solicitudId) === String(id)) {
+        setPacienteLive({ lat: p.lat, lng: p.lng });
+      }
+    });
     socket.on("mensaje:nuevo", (msg) => {
       if (String(msg.solicitud_id) === String(id)) {
         setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
@@ -116,6 +117,7 @@ export function RequestDetail() {
       socket.emit("chat:escribiendo", { solicitudId: id, escribiendo: false });
       socket.emit("solicitud:salir", id);
       socket.off("ubicacion:medico");
+      socket.off("ubicacion:paciente");
       socket.off("mensaje:nuevo");
       socket.off("chat:escribiendo");
       socket.off("solicitud:actualizada");
@@ -170,6 +172,24 @@ export function RequestDetail() {
     };
   }, [id, user, request?.estado, request?.modalidad]);
 
+  // Consultorio: el paciente comparte su ubicación mientras va al consultorio
+  useEffect(() => {
+    if (user?.rol !== "paciente" || !navigator.geolocation) return;
+    if (request?.modalidad !== "consultorio") return;
+    if (!["aceptada", "en_camino"].includes(request?.estado)) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const posicion = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setPacienteLive(posicion);
+        connectSocket().emit("ubicacion:paciente", { solicitudId: id, ...posicion });
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 10000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [id, user?.rol, request?.estado, request?.modalidad]);
+
   function sendMessage(e) {
     e.preventDefault();
     if (!draft.trim()) return;
@@ -222,21 +242,52 @@ export function RequestDetail() {
     }
   }
 
+  // Seguimiento: médico -> domicilio del paciente, o paciente -> consultorio del médico
+  const esConsultorio = request?.modalidad === "consultorio";
+  const consultorio =
+    request?.medico_consultorio_lat != null
+      ? { lat: request.medico_consultorio_lat, lng: request.medico_consultorio_lng }
+      : null;
+  const casaPaciente = request ? { lat: request.lat, lng: request.lng } : null;
+  const enSeguimiento = ["aceptada", "en_camino"].includes(request?.estado);
+  const origenRuta = enSeguimiento ? (esConsultorio ? pacienteLive : doctorLocation) : null;
+  const destinoRuta = esConsultorio ? consultorio : casaPaciente;
+  const ruta = useRuta(origenRuta, destinoRuta);
+
   if (error && !request) return <p className="form-error">{error}</p>;
   if (!request) return <p>Cargando...</p>;
 
-  const pacienteUbicacion = { lat: request.lat, lng: request.lng };
-  const markers = [
-    { ...pacienteUbicacion, label: request.paciente_nombre ?? "Paciente", color: "blue" },
-  ];
-  if (doctorLocation) {
+  const markers = [];
+  if (esConsultorio) {
+    if (consultorio) {
+      markers.push({ ...consultorio, label: `Consultorio · ${request.medico_nombre ?? ""}`, color: "green" });
+    }
     markers.push({
-      ...doctorLocation,
-      label: request.medico_nombre ?? "Médico",
-      color: "orange",
+      ...(pacienteLive ?? casaPaciente),
+      label: pacienteLive ? `${request.paciente_nombre ?? "Paciente"} (en camino)` : "Ubicación del paciente",
+      color: "blue",
     });
+  } else {
+    markers.push({ ...casaPaciente, label: `Domicilio · ${request.paciente_nombre ?? ""}`, color: "blue" });
+    if (doctorLocation) {
+      markers.push({ ...doctorLocation, label: request.medico_nombre ?? "Médico", color: "orange" });
+    }
   }
-  const route = doctorLocation ? [doctorLocation, pacienteUbicacion] : null;
+  const route = ruta?.puntos ?? null;
+  const centroMapa = origenRuta ?? destinoRuta ?? casaPaciente;
+  const soyMedico = user?.rol === "medico";
+  const distanciaTexto = textoDistancia(ruta?.distanciaM ?? distanciaMetros);
+  const tiempoTexto = textoDuracion(ruta?.duracionS);
+  let seguimiento = null;
+  if (origenRuta && destinoRuta) {
+    seguimiento = esConsultorio
+      ? soyMedico
+        ? `🚶 ${request.paciente_nombre} está a ${distanciaTexto} de tu consultorio`
+        : `🏥 Estás a ${distanciaTexto} del consultorio`
+      : soyMedico
+        ? `🚗 Estás a ${distanciaTexto} del domicilio del paciente`
+        : `🚗 ${request.medico_nombre} está a ${distanciaTexto} de tu domicilio`;
+  }
   const contraparte =
     user?.rol === "medico"
       ? { etiqueta: "Paciente", nombre: request.paciente_nombre }
@@ -303,18 +354,48 @@ export function RequestDetail() {
           </p>
         )}
         {error && <p className="form-error">{error}</p>}
-        {doctorLocation && (
+        {seguimiento && (
+          <div className="tracking-bar" role="status">
+            <strong>{seguimiento}</strong>
+            {tiempoTexto && <span className="tracking-eta">⏱️ llega en ~{tiempoTexto}</span>}
+            {ruta?.aproximada && <small>Distancia en línea recta (ruta no disponible)</small>}
+          </div>
+        )}
+        {esConsultorio && request.medico_id && !consultorio && enSeguimiento && (
           <p className="form-hint">
-            Distancia hasta el paciente: {formatDistancia(distanciaMetros)}
+            📍 El médico aún no marcó su consultorio en el mapa; el seguimiento de la ruta se activará
+            cuando lo haga.
+          </p>
+        )}
+        {esConsultorio && user?.rol === "paciente" && enSeguimiento && (
+          <p className="form-hint">
+            📡 Compartimos tu ubicación con el médico mientras vas al consultorio. Al llegar se
+            registra sola tu llegada.
           </p>
         )}
 
-        <MapView
-          center={doctorLocation ?? pacienteUbicacion}
-          markers={markers}
-          route={route}
-          height={360}
-        />
+        <MapView center={centroMapa} markers={markers} route={route} height={360} />
+        <div className="map-legend">
+          {esConsultorio ? (
+            <>
+              <span>
+                <i style={{ background: "#1f9d55" }} /> Consultorio
+              </span>
+              <span>
+                <i style={{ background: "var(--primary)" }} /> Paciente
+              </span>
+            </>
+          ) : (
+            <>
+              <span>
+                <i style={{ background: "var(--primary)" }} /> Domicilio del paciente
+              </span>
+              <span>
+                <i style={{ background: "var(--warning)" }} /> Médico
+              </span>
+            </>
+          )}
+        </div>
 
         <div className="request-actions">
           {user?.rol === "paciente" &&

@@ -46,6 +46,9 @@ export function DoctorDashboard() {
   const [agenda, setAgenda] = useState([]);
   const [consultorio, setConsultorio] = useState("");
   const [consultorioGuardado, setConsultorioGuardado] = useState(null);
+  const [ubicConsultorio, setUbicConsultorio] = useState(null);
+  const [buscandoDireccion, setBuscandoDireccion] = useState(false);
+  const [nuevas, setNuevas] = useState(() => new Set());
   const [fuenteUbicacion, setFuenteUbicacion] = useState("buscando");
   const [radioKm, setRadioKm] = useState(20);
 
@@ -60,17 +63,56 @@ export function DoctorDashboard() {
       .then((perfil) => {
         setDisponible(perfil.disponible);
         setConsultorio(perfil.direccion_consultorio ?? "");
+        if (perfil.consultorio_lat != null) {
+          setUbicConsultorio({ lat: perfil.consultorio_lat, lng: perfil.consultorio_lng });
+        }
       })
       .catch(() => {});
   }, []);
+
+  // Ubicar el consultorio: con el GPS del médico o buscando la dirección escrita
+  function usarMiUbicacionComoConsultorio() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUbicConsultorio({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setError("No se pudo obtener tu ubicación. Activa el permiso de ubicación del navegador.")
+    );
+  }
+
+  async function buscarDireccionEnMapa() {
+    if (!consultorio.trim()) return;
+    setBuscandoDireccion(true);
+    setError(null);
+    try {
+      const q = encodeURIComponent(`${consultorio}, Lima, Perú`);
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&countrycodes=pe&limit=1&q=${q}`,
+        { headers: { "Accept-Language": "es" } }
+      );
+      const [lugar] = await r.json();
+      if (!lugar) {
+        setError("No se encontró esa dirección. Prueba con «Usar mi ubicación actual» estando en el consultorio.");
+        return;
+      }
+      setUbicConsultorio({ lat: Number(lugar.lat), lng: Number(lugar.lon) });
+    } catch {
+      setError("No se pudo buscar la dirección. Inténtalo de nuevo.");
+    } finally {
+      setBuscandoDireccion(false);
+    }
+  }
 
   async function handleGuardarConsultorio(e) {
     e.preventDefault();
     setConsultorioGuardado(null);
     try {
-      const perfil = await setDireccionConsultorio(consultorio);
+      const perfil = await setDireccionConsultorio(consultorio, ubicConsultorio);
       setConsultorio(perfil.direccion_consultorio ?? "");
-      setConsultorioGuardado("Dirección guardada.");
+      setConsultorioGuardado(
+        perfil.consultorio_lat != null
+          ? "Dirección y ubicación en el mapa guardadas."
+          : "Dirección guardada. Marca también la ubicación en el mapa para el seguimiento."
+      );
     } catch (err) {
       setError(err.response?.data?.error ?? "No se pudo guardar la dirección del consultorio.");
     }
@@ -120,7 +162,11 @@ export function DoctorDashboard() {
 
   useEffect(() => {
     const socket = connectSocket();
-    const onNueva = () => loadNearby();
+    // Una solicitud nueva aparece al instante y queda resaltada como "Nueva"
+    const onNueva = (s) => {
+      if (s?.id) setNuevas((prev) => new Set(prev).add(s.id));
+      loadNearby();
+    };
     const onTomada = ({ id }) => setRequests((prev) => prev.filter((r) => r.id !== id));
     socket.on("solicitud:nueva", onNueva);
     socket.on("solicitud:tomada", onTomada);
@@ -285,9 +331,15 @@ export function DoctorDashboard() {
         )}
         <ul className="request-list">
           {visibleRequests.map((r) => (
-            <li key={r.id} className="request-list-item request-list-item--card">
+            <li
+              key={r.id}
+              className={`request-list-item request-list-item--card ${nuevas.has(r.id) ? "is-new" : ""}`}
+            >
               <div>
-                <strong>{r.tipo_procedimiento}</strong>
+                <strong>
+                  {r.tipo_procedimiento}
+                  {nuevas.has(r.id) && <span className="new-badge">🆕 Nueva</span>}
+                </strong>
                 <div className="tag-row">
                   <span className="tag">
                     {MODALIDADES[r.modalidad]?.icon} {MODALIDADES[r.modalidad]?.label}
@@ -365,7 +417,8 @@ export function DoctorDashboard() {
       <section className="panel">
         <h2>🏥 Mi consultorio</h2>
         <p className="form-hint">
-          Los pacientes que elijan «En consultorio» verán esta dirección al ser aceptados.
+          Los pacientes que elijan «En consultorio» verán esta dirección y el mapa con la ruta
+          hasta aquí.
         </p>
         <form className="request-form" onSubmit={handleGuardarConsultorio}>
           <label>
@@ -377,9 +430,35 @@ export function DoctorDashboard() {
               onChange={(e) => setConsultorio(e.target.value)}
             />
           </label>
+          <div className="consultorio-ubicar">
+            <button type="button" className="btn btn-outline btn-sm" onClick={usarMiUbicacionComoConsultorio}>
+              📍 Usar mi ubicación actual
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={buscarDireccionEnMapa}
+              disabled={buscandoDireccion || !consultorio.trim()}
+            >
+              {buscandoDireccion ? "Buscando..." : "🔎 Ubicar la dirección en el mapa"}
+            </button>
+          </div>
+          {ubicConsultorio ? (
+            <MapView
+              center={ubicConsultorio}
+              markers={[{ ...ubicConsultorio, label: "Mi consultorio", color: "green" }]}
+              zoom={16}
+              height={200}
+            />
+          ) : (
+            <p className="form-hint">
+              📍 Aún no marcaste el consultorio en el mapa. Sin esa ubicación, el paciente no verá la
+              ruta hasta aquí.
+            </p>
+          )}
           {consultorioGuardado && <p className="form-success">✔ {consultorioGuardado}</p>}
           <button className="btn btn-primary" type="submit">
-            Guardar dirección
+            Guardar consultorio
           </button>
         </form>
       </section>

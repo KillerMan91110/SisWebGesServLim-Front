@@ -92,9 +92,9 @@ export function MapView({ center, zoom = 13, markers = [], route = null, height 
           source: ROUTE_SOURCE_ID,
           layout: { "line-cap": "round", "line-join": "round" },
           paint: {
-            "line-color": "#2563eb",
-            "line-width": 3,
-            "line-dasharray": [1, 1.5],
+            "line-color": "#0b6e8a",
+            "line-width": 5,
+            "line-opacity": 0.85,
           },
         });
       }
