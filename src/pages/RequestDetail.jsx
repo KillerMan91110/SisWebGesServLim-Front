@@ -41,6 +41,13 @@ export function RequestDetail() {
   const [distanciaMetros, setDistanciaMetros] = useState(null);
   const watchIdRef = useRef(null);
   const [historial, setHistorial] = useState(null);
+  const chatBoxRef = useRef(null);
+
+  // Mantener visible el último mensaje del chat (solo se desplaza la caja, no la página)
+  useEffect(() => {
+    const caja = chatBoxRef.current;
+    if (caja) caja.scrollTop = caja.scrollHeight;
+  }, [messages.length]);
 
   const esMedicoAsignado = user?.rol === "medico" && request?.medico_id === user?.id;
   useEffect(() => {
@@ -189,13 +196,20 @@ export function RequestDetail() {
     user?.rol === "medico"
       ? { etiqueta: "Paciente", nombre: request.paciente_nombre }
       : { etiqueta: "Médico", nombre: request.medico_nombre };
+  const chatActivo = ["aceptada", "en_camino", "en_atencion"].includes(request.estado);
 
   return (
-    <div className="dashboard">
+    <div className="detail-layout">
+      <div className="detail-main">
       <section className="panel">
         <div className="request-header">
           <h2>{request.tipo_procedimiento}</h2>
-          <StatusBadge estado={request.estado} />
+          <div className="request-header-actions">
+            <StatusBadge estado={request.estado} />
+            <a href="#chat" className="btn btn-outline btn-sm solo-movil">
+              💬 Ir al chat
+            </a>
+          </div>
         </div>
         <div className="tag-row">
           <span className="tag">
@@ -464,32 +478,60 @@ export function RequestDetail() {
         </section>
       )}
 
-      <section className="panel no-print">
-        <h2>Chat</h2>
-        <div className="chat-messages">
-          {messages.length === 0 && <p>Aún no hay mensajes.</p>}
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`chat-bubble ${m.remitente_id === user?.id ? "chat-bubble--own" : ""}`}
-            >
-              {m.contenido}
+      </div>
+
+      <aside id="chat" className="detail-side no-print">
+        <section className="panel chat-panel">
+          <div className="chat-head">
+            <span className="chat-avatar" aria-hidden="true">
+              {user?.rol === "medico" ? "🧑" : "🩺"}
+            </span>
+            <div>
+              <strong>{contraparte.nombre ?? "Esperando a un médico"}</strong>
+              <small>{contraparte.nombre ? contraparte.etiqueta : "El chat se habilita al aceptar"}</small>
             </div>
-          ))}
-        </div>
-        {["aceptada", "en_camino", "en_atencion"].includes(request.estado) ? (
-          <form className="chat-input" onSubmit={sendMessage}>
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Escribe un mensaje..."
-            />
-            <button type="submit">Enviar</button>
-          </form>
-        ) : (
-          <p className="form-hint">El chat ya no está disponible para esta solicitud.</p>
-        )}
-      </section>
+          </div>
+          <div className="chat-messages" ref={chatBoxRef}>
+            {messages.length === 0 && (
+              <p className="chat-empty">
+                {chatActivo
+                  ? "Aún no hay mensajes. Escribe para coordinar los detalles de la atención."
+                  : "Aún no hay mensajes."}
+              </p>
+            )}
+            {messages.map((m) => (
+              <div
+                key={m.id}
+                className={`chat-bubble ${m.remitente_id === user?.id ? "chat-bubble--own" : ""}`}
+              >
+                {m.contenido}
+                {m.enviado_en && (
+                  <time>
+                    {new Date(m.enviado_en).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}
+                  </time>
+                )}
+              </div>
+            ))}
+          </div>
+          {chatActivo ? (
+            <form className="chat-input" onSubmit={sendMessage}>
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Escribe un mensaje..."
+                aria-label="Mensaje"
+              />
+              <button type="submit">Enviar</button>
+            </form>
+          ) : (
+            <p className="form-hint">
+              {request.estado === "pendiente"
+                ? "Podrás chatear cuando un médico acepte la solicitud."
+                : "El chat ya no está disponible para esta solicitud."}
+            </p>
+          )}
+        </section>
+      </aside>
     </div>
   );
 }
