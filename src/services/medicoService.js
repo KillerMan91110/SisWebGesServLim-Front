@@ -19,3 +19,9 @@ export function setDireccionConsultorio(direccionConsultorio) {
     .patch("/medicos/perfil/consultorio", { direccionConsultorio })
     .then((res) => res.data.perfil);
 }
+
+export function getMedicosCercanos(lat, lng, radio = 10000) {
+  return api
+    .get("/medicos/cercanos", { params: { lat, lng, radio } })
+    .then((res) => res.data.medicos);
+}

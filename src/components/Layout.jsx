@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Footer } from "./Footer";
 import { NotificationBell } from "./NotificationBell";
+import { ConsentGate } from "./ConsentGate";
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -115,6 +116,7 @@ export function Layout() {
         <Outlet />
       </main>
       <Footer />
+      {user && <ConsentGate />}
     </div>
   );
 }

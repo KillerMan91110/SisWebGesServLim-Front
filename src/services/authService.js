@@ -14,9 +14,19 @@ export function changePassword({ passwordActual, passwordNueva }) {
     .then((res) => res.data);
 }
 
-export function registerPaciente({ nombre, email, password, telefono }) {
+export function getMe() {
+  return api.get("/auth/me").then((res) => res.data.usuario);
+}
+
+export function acceptConsent() {
   return api
-    .post("/auth/register/paciente", { nombre, email, password, telefono })
+    .post("/auth/me/consentimiento", { aceptaPrivacidad: true })
+    .then((res) => res.data.usuario);
+}
+
+export function registerPaciente({ nombre, email, password, telefono, aceptaPrivacidad }) {
+  return api
+    .post("/auth/register/paciente", { nombre, email, password, telefono, aceptaPrivacidad })
     .then((res) => res.data);
 }
 
@@ -27,6 +37,7 @@ export function registerMedico({
   telefono,
   cmpColegiatura,
   especialidad,
+  aceptaPrivacidad,
 }) {
   return api
     .post("/auth/register/medico", {
@@ -36,6 +47,7 @@ export function registerMedico({
       telefono,
       cmpColegiatura,
       especialidad,
+      aceptaPrivacidad,
     })
     .then((res) => res.data);
 }

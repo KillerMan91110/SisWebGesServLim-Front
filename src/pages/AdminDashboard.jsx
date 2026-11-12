@@ -16,6 +16,7 @@ import {
 } from "../services/adminService";
 import { AreaChart, BarList, SplitBar } from "../components/Charts";
 import { StatusBadge } from "../components/StatusBadge";
+import { AdminSolicitudes } from "../components/AdminSolicitudes";
 import { formatBytes, formatFechaHora, MODALIDADES } from "../utils/formato";
 
 const PERIODOS = [
@@ -27,6 +28,7 @@ const PERIODOS = [
 
 const TABS = [
   { id: "resumen", label: "Resumen", icon: "📊" },
+  { id: "solicitudes", label: "Solicitudes", icon: "📋" },
   { id: "medicos", label: "Médicos", icon: "👩‍⚕️" },
   { id: "usuarios", label: "Usuarios", icon: "👥" },
   { id: "seguridad", label: "Seguridad y respaldos", icon: "🛡️" },
@@ -526,6 +528,19 @@ export function AdminDashboard() {
             </div>
           )}
         </>
+      )}
+
+      {tab === "solicitudes" && (
+        <AdminSolicitudes
+          medicos={data?.medicos ?? []}
+          tipos={[
+            "Vía intravenosa / catéter",
+            "Inyección",
+            "Curación de heridas",
+            "Toma de signos vitales",
+            "Otro",
+          ]}
+        />
       )}
 
       {tab === "medicos" && (

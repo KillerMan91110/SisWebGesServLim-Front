@@ -21,6 +21,7 @@ export function RegisterPage() {
     rol: "paciente",
     cmpColegiatura: "",
     especialidad: ESPECIALIDADES[0],
+    aceptaPrivacidad: false,
   });
   const [error, setError] = useState(null);
   const [pendingMessage, setPendingMessage] = useState(null);
@@ -44,7 +45,9 @@ export function RegisterPage() {
       }
     } catch (err) {
       setError(
-        err.response?.data?.error ?? "No se pudo completar el registro."
+        err.response?.data?.detalles?.[0]?.mensaje ??
+          err.response?.data?.error ??
+          "No se pudo completar el registro."
       );
     } finally {
       setLoading(false);
@@ -155,7 +158,24 @@ export function RegisterPage() {
               </>
             )}
 
-            <button type="submit" disabled={loading}>
+            <label className="consent-check">
+              <input
+                type="checkbox"
+                checked={form.aceptaPrivacidad}
+                onChange={(e) => update("aceptaPrivacidad", e.target.checked)}
+                required
+              />
+              <span>
+                Acepto la{" "}
+                <Link to="/privacidad" target="_blank" rel="noreferrer">
+                  política de privacidad
+                </Link>{" "}
+                y autorizo el tratamiento de mis datos personales y de salud para la atención
+                médica (Ley N.° 29733).
+              </span>
+            </label>
+
+            <button type="submit" disabled={loading || !form.aceptaPrivacidad}>
               {loading ? "Creando cuenta..." : "Crear cuenta"}
             </button>
             <p>

@@ -29,6 +29,9 @@ export function Footer() {
             <li>
               <Link to="/contacto">Contáctanos</Link>
             </li>
+            <li>
+              <Link to="/privacidad">Política de privacidad</Link>
+            </li>
           </ul>
         </div>
         <div>

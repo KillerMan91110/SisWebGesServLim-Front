@@ -4,6 +4,7 @@ import { createRequest, getMyRequests } from "../services/requestService";
 import { StatusBadge } from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { getFicha } from "../services/pacienteService";
+import { NearbyDoctors } from "../components/NearbyDoctors";
 import { aInputLocal, formatFechaHora, MODALIDADES } from "../utils/formato";
 
 const TIPOS_PROCEDIMIENTO = [
@@ -176,6 +177,8 @@ export function PatientDashboard() {
           </div>
         </div>
       </div>
+
+      <NearbyDoctors location={location} />
 
       <section className="panel">
         <h2>Publicar solicitud de atención</h2>

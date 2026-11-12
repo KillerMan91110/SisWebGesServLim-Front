@@ -68,3 +68,7 @@ export async function downloadRespaldo(nombre) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+export function getSolicitudesAdmin(filtros) {
+  return api.get("/admin/solicitudes", { params: filtros }).then((res) => res.data);
+}

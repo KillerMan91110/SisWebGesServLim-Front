@@ -14,6 +14,7 @@ import { AboutPage } from "./pages/AboutPage";
 import { StaffPage } from "./pages/StaffPage";
 import { ContactPage } from "./pages/ContactPage";
 import { FichaClinicaPage } from "./pages/FichaClinicaPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/nosotros" element={<AboutPage />} />
             <Route path="/personal" element={<StaffPage />} />
             <Route path="/contacto" element={<ContactPage />} />
+            <Route path="/privacidad" element={<PrivacyPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route
